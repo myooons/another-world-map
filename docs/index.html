@@ -10,6 +10,7 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
   <script src="https://unpkg.com/topojson@3/dist/topojson.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <style>
     .tooltip {
       position: fixed;
@@ -160,32 +161,41 @@
       const [form, setForm] = useState({ user_name: '', topic: '', description: '' });
       const [submitting, setSubmitting] = useState(false);
 
-      const API_BASE = 'https://another-world-map.fly.dev';
-      const apiFetch = useCallback(async (url, opts = {}) => {
-        const res = await fetch(API_BASE + url, { headers: { 'Content-Type': 'application/json' }, ...opts });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      }, []);
+      const sb = supabase.createClient(
+        'https://foawimpskcoxgunilpzf.supabase.co',
+        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvYXdpbXBza2NveGd1bmlscHpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NTA1MTUsImV4cCI6MjA5NTAyNjUxNX0.VDeFpPLyWbZ4F-UlUxnVb3a0zAbEvYA_4c-XsQs6Wok'
+      );
 
       const loadTab = useCallback(async (tab) => {
         setLoading(true);
         setError(null);
         try {
           if (tab === 'Leaders' && leadersData.length === 0) {
-            setLeadersData(await apiFetch('/api/leaders'));
+            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', 'leaders').single();
+            if (error) throw error;
+            setLeadersData(data.data);
           } else if (tab === 'Parliament' && parliamentData.length === 0) {
-            setParliamentData(await apiFetch('/api/parliament'));
+            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', 'parliament').single();
+            if (error) throw error;
+            setParliamentData(data.data);
           } else if (tab === 'Suggestions') {
-            setSuggestions(await apiFetch('/api/suggestions'));
+            const { data, error } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
+            if (error) throw error;
+            setSuggestions(data);
           } else if (tab === 'Hall of Fame') {
-            setHallOfFame(await apiFetch('/api/hall-of-fame'));
+            const { data, error } = await sb.from('suggestions').select('user_name, votes');
+            if (error) throw error;
+            const totals = {};
+            data.forEach(r => { totals[r.user_name] = (totals[r.user_name] || 0) + r.votes; });
+            const ranked = Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,10).map(([user_name, total_votes]) => ({ user_name, total_votes }));
+            setHallOfFame(ranked);
           }
         } catch (e) {
           setError(e.message);
         } finally {
           setLoading(false);
         }
-      }, [leadersData.length, parliamentData.length, apiFetch]);
+      }, [leadersData.length, parliamentData.length]);
 
       useEffect(() => { loadTab('Leaders'); }, []);
 
@@ -196,8 +206,10 @@
 
       const handleVote = async (id) => {
         try {
-          const updated = await apiFetch(`/api/vote/${id}`, { method: 'POST' });
-          setSuggestions(prev => prev.map(s => s.id === id ? updated : s));
+          const { data: current } = await sb.from('suggestions').select('votes').eq('id', id).single();
+          const { data, error } = await sb.from('suggestions').update({ votes: current.votes + 1 }).eq('id', id).select().single();
+          if (error) throw error;
+          setSuggestions(prev => prev.map(s => s.id === id ? data : s));
         } catch (e) {
           setError(e.message);
         }
@@ -207,9 +219,11 @@
         e.preventDefault();
         setSubmitting(true);
         try {
-          await apiFetch('/api/suggest', { method: 'POST', body: JSON.stringify(form) });
+          const { error } = await sb.from('suggestions').insert({ ...form, votes: 0 });
+          if (error) throw error;
           setForm({ user_name: '', topic: '', description: '' });
-          setSuggestions(await apiFetch('/api/suggestions'));
+          const { data } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
+          setSuggestions(data);
         } catch (e) {
           setError(e.message);
         } finally {

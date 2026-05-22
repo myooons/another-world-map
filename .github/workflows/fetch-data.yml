@@ -1,0 +1,25 @@
+name: Fetch Wikidata
+
+on:
+  schedule:
+    - cron: '0 0 * * 0'  # every Sunday 00:00 UTC
+  workflow_dispatch:       # manual trigger
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install requests supabase
+
+      - name: Fetch and store data
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python scripts/fetch_data.py
