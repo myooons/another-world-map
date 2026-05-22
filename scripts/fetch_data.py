@@ -87,6 +87,35 @@ def sparql_fetch(query: str, retries: int = 3):
     return None
 
 
+def fetch_parliament_batch(countries: list, results: dict, depth: int = 0):
+    if not countries:
+        return
+    qids = " ".join(f"wd:{qid}" for qid, _ in countries)
+    query = PARLIAMENT_BATCH_SPARQL.format(qids=qids)
+    bindings = sparql_fetch(query, retries=2)
+    if bindings is not None:
+        for b in bindings:
+            iso2 = b["isoAlpha2"]["value"]
+            avg = float(b["avgAge"]["value"])
+            results[iso2] = {
+                "iso2": iso2,
+                "country": b["countryLabel"]["value"],
+                "average_age": round(avg, 1),
+                "hex_color": interpolate_color(avg),
+            }
+        return
+    # Failed — split in half and retry each side
+    if len(countries) == 1:
+        print(f"    Single country {countries[0][1]} failed after all retries, giving up.")
+        return
+    mid = len(countries) // 2
+    print(f"    Batch of {len(countries)} failed, splitting into {mid}+{len(countries)-mid}...")
+    time.sleep(5)
+    fetch_parliament_batch(countries[:mid], results, depth + 1)
+    time.sleep(5)
+    fetch_parliament_batch(countries[mid:], results, depth + 1)
+
+
 def fetch_parliament_batched():
     print("  Fetching country list...")
     country_bindings = sparql_fetch(COUNTRIES_SPARQL)
@@ -101,23 +130,8 @@ def fetch_parliament_batched():
     batches = [countries[i:i + BATCH_SIZE] for i in range(0, len(countries), BATCH_SIZE)]
 
     for idx, batch in enumerate(batches):
-        qids = " ".join(f"wd:{qid}" for qid, _ in batch)
-        query = PARLIAMENT_BATCH_SPARQL.format(qids=qids)
-        print(f"  Batch {idx+1}/{len(batches)}...", end=" ", flush=True)
-        bindings = sparql_fetch(query, retries=2)
-        if bindings is None:
-            print("failed, skipping.")
-            continue
-        for b in bindings:
-            iso2 = b["isoAlpha2"]["value"]
-            avg = float(b["avgAge"]["value"])
-            results[iso2] = {
-                "iso2": iso2,
-                "country": b["countryLabel"]["value"],
-                "average_age": round(avg, 1),
-                "hex_color": interpolate_color(avg),
-            }
-        print(f"{len(bindings)} entries.")
+        print(f"  Batch {idx+1}/{len(batches)} ({len(batch)} countries)...", flush=True)
+        fetch_parliament_batch(batch, results)
         if idx < len(batches) - 1:
             time.sleep(3)
 
