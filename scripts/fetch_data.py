@@ -64,10 +64,18 @@ def calc_age(birth_str: str):
     return None
 
 
-def sparql_fetch(query: str):
-    resp = requests.get(SPARQL_ENDPOINT, params={"query": query}, headers=HEADERS, timeout=60)
-    resp.raise_for_status()
-    return resp.json()["results"]["bindings"]
+def sparql_fetch(query: str, retries: int = 3):
+    import time
+    for attempt in range(retries):
+        try:
+            resp = requests.get(SPARQL_ENDPOINT, params={"query": query}, headers=HEADERS, timeout=90)
+            resp.raise_for_status()
+            return resp.json()["results"]["bindings"]
+        except Exception as e:
+            print(f"  Attempt {attempt+1} failed: {e}")
+            if attempt < retries - 1:
+                time.sleep(15 * (attempt + 1))
+    return None
 
 
 def main():
@@ -75,45 +83,52 @@ def main():
     key = os.environ["SUPABASE_KEY"]
     sb = create_client(url, key)
 
+    now = datetime.now(timezone.utc).isoformat()
+
     # Leaders
     print("Fetching leaders...")
     bindings = sparql_fetch(LEADERS_SPARQL)
-    seen = {}
-    for b in bindings:
-        iso2 = b["isoAlpha2"]["value"]
-        if iso2 in seen:
-            continue
-        age = calc_age(b["birthDate"]["value"])
-        if age is None:
-            continue
-        seen[iso2] = {
-            "iso2": iso2,
-            "country": b["countryLabel"]["value"],
-            "leader_name": b["leaderLabel"]["value"],
-            "age": age,
-            "hex_color": interpolate_color(age),
-        }
-    leaders = list(seen.values())
-    print(f"  {len(leaders)} leaders processed")
+    if bindings is not None:
+        seen = {}
+        for b in bindings:
+            iso2 = b["isoAlpha2"]["value"]
+            if iso2 in seen:
+                continue
+            age = calc_age(b["birthDate"]["value"])
+            if age is None:
+                continue
+            seen[iso2] = {
+                "iso2": iso2,
+                "country": b["countryLabel"]["value"],
+                "leader_name": b["leaderLabel"]["value"],
+                "age": age,
+                "hex_color": interpolate_color(age),
+            }
+        leaders = list(seen.values())
+        print(f"  {len(leaders)} leaders processed")
+        sb.table("wikidata_cache").upsert({"key": "leaders", "data": leaders, "updated_at": now}, on_conflict="key").execute()
+        print("  Leaders saved to Supabase.")
+    else:
+        print("  Leaders fetch failed, skipping.")
 
     # Parliament
     print("Fetching parliament...")
     bindings = sparql_fetch(PARLIAMENT_SPARQL)
-    parliament = []
-    for b in bindings:
-        avg = float(b["avgAge"]["value"])
-        parliament.append({
-            "iso2": b["isoAlpha2"]["value"],
-            "country": b["countryLabel"]["value"],
-            "average_age": round(avg, 1),
-            "hex_color": interpolate_color(avg),
-        })
-    print(f"  {len(parliament)} countries processed")
-
-    # Upsert to Supabase
-    now = datetime.now(timezone.utc).isoformat()
-    sb.table("wikidata_cache").upsert({"key": "leaders",    "data": leaders,    "updated_at": now}, on_conflict="key").execute()
-    sb.table("wikidata_cache").upsert({"key": "parliament", "data": parliament, "updated_at": now}, on_conflict="key").execute()
+    if bindings is not None:
+        parliament = []
+        for b in bindings:
+            avg = float(b["avgAge"]["value"])
+            parliament.append({
+                "iso2": b["isoAlpha2"]["value"],
+                "country": b["countryLabel"]["value"],
+                "average_age": round(avg, 1),
+                "hex_color": interpolate_color(avg),
+            })
+        print(f"  {len(parliament)} countries processed")
+        sb.table("wikidata_cache").upsert({"key": "parliament", "data": parliament, "updated_at": now}, on_conflict="key").execute()
+        print("  Parliament saved to Supabase.")
+    else:
+        print("  Parliament fetch failed, skipping.")
     print("Saved to Supabase.")
 
 
