@@ -12,117 +12,106 @@
   <script src="https://unpkg.com/topojson@3/dist/topojson.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <style>
+    * { box-sizing: border-box; }
+    body { background: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; }
     .tooltip {
       position: fixed;
-      background: rgba(0,0,0,0.8);
-      color: white;
-      padding: 8px 12px;
-      border-radius: 6px;
+      background: rgba(15,23,42,0.92);
+      color: #f8fafc;
+      padding: 10px 14px;
+      border-radius: 10px;
       pointer-events: none;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       z-index: 9999;
-      max-width: 220px;
+      max-width: 230px;
+      backdrop-filter: blur(4px);
+      border: 1px solid rgba(255,255,255,0.08);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
     }
+    .tab-btn {
+      padding: 12px 18px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      background: none;
+      cursor: pointer;
+      white-space: nowrap;
+      color: #64748b;
+      border-bottom: 2px solid transparent;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab-btn:hover { color: #1e293b; }
+    .tab-btn.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+    .data-table th {
+      position: sticky; top: 0;
+      background: #f8fafc;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #94a3b8;
+      border-bottom: 1px solid #e2e8f0;
+      text-align: left;
+    }
+    .data-table td { padding: 9px 14px; font-size: 13px; color: #334155; border-bottom: 1px solid #f1f5f9; }
+    .data-table tr:hover td { background: #f8fafc; }
+    .data-table tr:last-child td { border-bottom: none; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 9999px; font-size: 12px; font-weight: 600; }
+    svg path { transition: stroke-width 0.1s; }
   </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
+<body>
   <div id="root"></div>
 
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
 
-    // ISO 3166-1 numeric -> alpha-2 mapping
     const ISO_NUM_TO_A2 = {
-      4:'AF', 248:'AX', 8:'AL', 12:'DZ', 16:'AS', 20:'AD', 24:'AO', 660:'AI', 10:'AQ', 28:'AG',
-      32:'AR', 51:'AM', 533:'AW', 36:'AU', 40:'AT', 31:'AZ', 44:'BS', 48:'BH', 50:'BD', 52:'BB',
-      112:'BY', 56:'BE', 84:'BZ', 204:'BJ', 60:'BM', 64:'BT', 68:'BO', 535:'BQ', 70:'BA', 72:'BW',
-      76:'BR', 96:'BN', 100:'BG', 854:'BF', 108:'BI', 132:'CV', 116:'KH', 120:'CM', 124:'CA',
-      140:'CF', 148:'TD', 152:'CL', 156:'CN', 170:'CO', 174:'KM', 180:'CD', 178:'CG', 188:'CR',
-      384:'CI', 191:'HR', 192:'CU', 531:'CW', 196:'CY', 203:'CZ', 208:'DK', 262:'DJ', 212:'DM',
-      214:'DO', 218:'EC', 818:'EG', 222:'SV', 226:'GQ', 232:'ER', 233:'EE', 748:'SZ', 231:'ET',
-      242:'FJ', 246:'FI', 250:'FR', 266:'GA', 270:'GM', 268:'GE', 276:'DE', 288:'GH', 300:'GR',
-      308:'GD', 320:'GT', 324:'GN', 624:'GW', 328:'GY', 332:'HT', 336:'VA', 340:'HN', 348:'HU',
-      352:'IS', 356:'IN', 360:'ID', 364:'IR', 368:'IQ', 372:'IE', 376:'IL', 380:'IT', 388:'JM',
-      392:'JP', 400:'JO', 398:'KZ', 404:'KE', 296:'KI', 408:'KP', 410:'KR', 414:'KW', 417:'KG',
-      418:'LA', 428:'LV', 422:'LB', 426:'LS', 430:'LR', 434:'LY', 438:'LI', 440:'LT', 442:'LU',
-      446:'MO', 450:'MG', 454:'MW', 458:'MY', 462:'MV', 466:'ML', 470:'MT', 584:'MH', 478:'MR',
-      480:'MU', 484:'MX', 583:'FM', 498:'MD', 492:'MC', 496:'MN', 499:'ME', 504:'MA', 508:'MZ',
-      104:'MM', 516:'NA', 520:'NR', 524:'NP', 528:'NL', 554:'NZ', 558:'NI', 562:'NE', 566:'NG',
-      578:'NO', 512:'OM', 586:'PK', 585:'PW', 275:'PS', 591:'PA', 598:'PG', 600:'PY', 604:'PE',
-      608:'PH', 616:'PL', 620:'PT', 630:'PR', 634:'QA', 642:'RO', 643:'RU', 646:'RW', 659:'KN',
-      662:'LC', 670:'VC', 882:'WS', 674:'SM', 678:'ST', 682:'SA', 686:'SN', 688:'RS', 690:'SC',
-      694:'SL', 702:'SG', 703:'SK', 705:'SI', 90:'SB', 706:'SO', 710:'ZA', 728:'SS', 724:'ES',
-      144:'LK', 729:'SD', 740:'SR', 752:'SE', 756:'CH', 760:'SY', 762:'TJ', 834:'TZ', 764:'TH',
-      626:'TL', 768:'TG', 776:'TO', 780:'TT', 788:'TN', 792:'TR', 795:'TM', 798:'TV', 800:'UG',
-      804:'UA', 784:'AE', 826:'GB', 840:'US', 858:'UY', 860:'UZ', 548:'VU', 862:'VE', 704:'VN',
-      887:'YE', 894:'ZM', 716:'ZW', 807:'MK', 158:'TW'
+      4:'AF',248:'AX',8:'AL',12:'DZ',16:'AS',20:'AD',24:'AO',660:'AI',10:'AQ',28:'AG',
+      32:'AR',51:'AM',533:'AW',36:'AU',40:'AT',31:'AZ',44:'BS',48:'BH',50:'BD',52:'BB',
+      112:'BY',56:'BE',84:'BZ',204:'BJ',60:'BM',64:'BT',68:'BO',535:'BQ',70:'BA',72:'BW',
+      76:'BR',96:'BN',100:'BG',854:'BF',108:'BI',132:'CV',116:'KH',120:'CM',124:'CA',
+      140:'CF',148:'TD',152:'CL',156:'CN',170:'CO',174:'KM',180:'CD',178:'CG',188:'CR',
+      384:'CI',191:'HR',192:'CU',531:'CW',196:'CY',203:'CZ',208:'DK',262:'DJ',212:'DM',
+      214:'DO',218:'EC',818:'EG',222:'SV',226:'GQ',232:'ER',233:'EE',748:'SZ',231:'ET',
+      242:'FJ',246:'FI',250:'FR',266:'GA',270:'GM',268:'GE',276:'DE',288:'GH',300:'GR',
+      308:'GD',320:'GT',324:'GN',624:'GW',328:'GY',332:'HT',336:'VA',340:'HN',348:'HU',
+      352:'IS',356:'IN',360:'ID',364:'IR',368:'IQ',372:'IE',376:'IL',380:'IT',388:'JM',
+      392:'JP',400:'JO',398:'KZ',404:'KE',296:'KI',408:'KP',410:'KR',414:'KW',417:'KG',
+      418:'LA',428:'LV',422:'LB',426:'LS',430:'LR',434:'LY',438:'LI',440:'LT',442:'LU',
+      446:'MO',450:'MG',454:'MW',458:'MY',462:'MV',466:'ML',470:'MT',584:'MH',478:'MR',
+      480:'MU',484:'MX',583:'FM',498:'MD',492:'MC',496:'MN',499:'ME',504:'MA',508:'MZ',
+      104:'MM',516:'NA',520:'NR',524:'NP',528:'NL',554:'NZ',558:'NI',562:'NE',566:'NG',
+      578:'NO',512:'OM',586:'PK',585:'PW',275:'PS',591:'PA',598:'PG',600:'PY',604:'PE',
+      608:'PH',616:'PL',620:'PT',630:'PR',634:'QA',642:'RO',643:'RU',646:'RW',659:'KN',
+      662:'LC',670:'VC',882:'WS',674:'SM',678:'ST',682:'SA',686:'SN',688:'RS',690:'SC',
+      694:'SL',702:'SG',703:'SK',705:'SI',90:'SB',706:'SO',710:'ZA',728:'SS',724:'ES',
+      144:'LK',729:'SD',740:'SR',752:'SE',756:'CH',760:'SY',762:'TJ',834:'TZ',764:'TH',
+      626:'TL',768:'TG',776:'TO',780:'TT',788:'TN',792:'TR',795:'TM',798:'TV',800:'UG',
+      804:'UA',784:'AE',826:'GB',840:'US',858:'UY',860:'UZ',548:'VU',862:'VE',704:'VN',
+      887:'YE',894:'ZM',716:'ZW',807:'MK',158:'TW'
     };
 
-    // Map tab definitions
     const MAP_TABS = [
-      {
-        id: 'Leaders',
-        dbKey: 'leaders',
-        minLabel: 'Young (30)',
-        maxLabel: 'Old (90+)',
-        reversed: false,
-        valueKey: 'age',
-        valueLabel: 'Age',
-        unit: 'yrs',
-        extraTooltip: e => e.leader_name ? `Leader: ${e.leader_name}<br/>` : '',
-      },
-      {
-        id: 'Median Age',
-        dbKey: 'median_age',
-        minLabel: 'Young pop (15)',
-        maxLabel: 'Old pop (55)',
-        reversed: false,
-        valueKey: 'value',
-        valueLabel: 'Median Age',
-        unit: 'yrs',
-        extraTooltip: null,
-      },
-      {
-        id: 'Life Expectancy',
-        dbKey: 'life_expectancy',
-        minLabel: 'Short (50yr)',
-        maxLabel: 'Long (85yr)',
-        reversed: true,
-        valueKey: 'value',
-        valueLabel: 'Life Expectancy',
-        unit: 'yrs',
-        extraTooltip: null,
-      },
-      {
-        id: 'Happiness',
-        dbKey: 'happiness',
-        minLabel: 'Unhappy (2)',
-        maxLabel: 'Happy (8)',
-        reversed: true,
-        valueKey: 'value',
-        valueLabel: 'Happiness',
-        unit: '/10',
-        extraTooltip: null,
-      },
-      {
-        id: 'Press Freedom',
-        dbKey: 'press_freedom',
-        minLabel: 'Free (0)',
-        maxLabel: 'Not Free (100)',
-        reversed: false,
-        valueKey: 'value',
-        valueLabel: 'Press Index',
-        unit: '',
-        extraTooltip: null,
-      },
+      { id:'Leaders',          dbKey:'leaders',         minLabel:'Young (30)',    maxLabel:'Old (90+)',       reversed:false, valueKey:'age',   valueLabel:'Age',             unit:'',    extraTooltip: e => e.leader_name ? `<span style="color:#94a3b8;font-size:11px">Leader</span><br/>${e.leader_name}<br/>` : '' },
+      { id:'Median Age',       dbKey:'median_age',      minLabel:'Young (15yr)',  maxLabel:'Old (55yr)',      reversed:false, valueKey:'value', valueLabel:'Median Age',      unit:'yr'  },
+      { id:'Life Expectancy',  dbKey:'life_expectancy', minLabel:'Short (50yr)',  maxLabel:'Long (85yr)',     reversed:true,  valueKey:'value', valueLabel:'Life Expectancy', unit:'yr'  },
+      { id:'Happiness',        dbKey:'happiness',       minLabel:'Unhappy (2)',   maxLabel:'Happy (8)',       reversed:true,  valueKey:'value', valueLabel:'Happiness',       unit:''    },
+      { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (100)', reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:''    },
     ];
-
     const SOCIAL_TABS = ['Suggestions', 'Hall of Fame'];
     const ALL_TABS = [...MAP_TABS.map(t => t.id), ...SOCIAL_TABS];
 
-    // ── WorldMap ──────────────────────────────────────────────────────────────
-    function WorldMap({ data = [], loading = false, tabCfg }) {
+    function getRegionCenter(lon) {
+      if (lon > 30 && lon <= 180)  return 130;   // Asia / Pacific / Australia
+      if (lon >= -30 && lon <= 30) return 10;    // Europe / Africa
+      return -90;                                 // Americas
+    }
+
+    // ── WorldMap ─────────────────────────────────────────────────────────────
+    function WorldMap({ data = [], loading = false, tabCfg, centerLon = 0 }) {
       const svgRef = useRef(null);
       const containerRef = useRef(null);
       const [geoData, setGeoData] = useState(null);
@@ -137,92 +126,118 @@
 
       useEffect(() => {
         if (!geoData || !containerRef.current) return;
-        const width = containerRef.current.clientWidth || 800;
-        const height = width * 0.5;
+        const width = containerRef.current.clientWidth || 900;
+        const height = Math.round(width * 0.52);
         const svg = d3.select(svgRef.current);
         svg.selectAll('*').remove();
-        svg.attr('width', width).attr('height', height);
+        svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
 
         const projection = d3.geoNaturalEarth1()
+          .rotate([-centerLon, 0])
           .scale(width / (2 * Math.PI))
           .translate([width / 2, height / 2]);
         const path = d3.geoPath().projection(projection);
         const dataMap = new Map(data.map(d => [d.iso2, d]));
 
-        svg.selectAll('path')
+        const paths = svg.selectAll('path')
           .data(geoData.features)
           .enter().append('path')
           .attr('d', path)
           .attr('fill', d => {
             const iso2 = ISO_NUM_TO_A2[+d.id];
             const entry = iso2 ? dataMap.get(iso2) : null;
-            return entry ? entry.hex_color : '#d1d5db';
+            return entry ? entry.hex_color : '#cbd5e1';
           })
-          .attr('stroke', '#fff')
+          .attr('stroke', '#ffffff')
           .attr('stroke-width', 0.4)
-          .on('mouseover', (event, d) => {
+          .style('cursor', 'pointer');
+
+        paths
+          .on('mouseover', function(event, d) {
+            d3.select(this).raise().attr('stroke', '#facc15').attr('stroke-width', 1.8);
             const iso2 = ISO_NUM_TO_A2[+d.id];
             const entry = iso2 ? dataMap.get(iso2) : null;
-            let html = `<strong>${entry ? entry.country : (iso2 || 'Unknown')}</strong>`;
+            let html = `<strong style="font-size:14px">${entry ? entry.country : (iso2 || 'Unknown')}</strong>`;
             if (entry) {
               if (tabCfg.extraTooltip) html += '<br/>' + tabCfg.extraTooltip(entry);
               const val = entry[tabCfg.valueKey];
-              if (val !== undefined) html += `<br/>${tabCfg.valueLabel}: ${val}${tabCfg.unit}`;
+              if (val !== undefined) html += `<span style="color:#94a3b8;font-size:11px">${tabCfg.valueLabel}</span><br/><strong style="font-size:18px;color:#facc15">${val}</strong>${tabCfg.unit}`;
             } else {
-              html += '<br/>No data';
+              html += '<br/><span style="color:#64748b">No data</span>';
             }
-            setTooltip({ visible: true, x: event.clientX + 12, y: event.clientY - 10, html });
+            setTooltip({ visible: true, x: event.clientX + 14, y: event.clientY - 14, html });
           })
           .on('mousemove', event => {
-            setTooltip(t => ({ ...t, x: event.clientX + 12, y: event.clientY - 10 }));
+            setTooltip(t => ({ ...t, x: event.clientX + 14, y: event.clientY - 14 }));
           })
-          .on('mouseout', () => setTooltip(t => ({ ...t, visible: false })));
-      }, [geoData, data, tabCfg]);
+          .on('mouseout', function() {
+            d3.select(this).attr('stroke', '#ffffff').attr('stroke-width', 0.4);
+            setTooltip(t => ({ ...t, visible: false }));
+          });
+      }, [geoData, data, tabCfg, centerLon]);
 
       return (
-        <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
-          {loading && <div className="text-center py-8 text-gray-500">Loading map data...</div>}
-          <svg ref={svgRef} style={{ width: '100%' }} />
+        <div ref={containerRef} style={{ position: 'relative', width: '100%', background: '#0f172a', borderRadius: '0 0 0 0' }}>
+          {loading && (
+            <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b', fontSize:14 }}>
+              Loading data...
+            </div>
+          )}
+          <svg ref={svgRef} style={{ display: 'block', width: '100%' }} />
           {tooltip.visible && (
-            <div
-              className="tooltip"
-              style={{ left: tooltip.x, top: tooltip.y }}
-              dangerouslySetInnerHTML={{ __html: tooltip.html }}
-            />
+            <div className="tooltip" style={{ left: tooltip.x, top: tooltip.y }}
+              dangerouslySetInnerHTML={{ __html: tooltip.html }} />
           )}
         </div>
       );
     }
 
     // ── ColorLegend ───────────────────────────────────────────────────────────
-    function ColorLegend({ minLabel, maxLabel, reversed = false }) {
+    function ColorLegend({ minLabel, maxLabel, reversed }) {
       const gradient = reversed
         ? 'linear-gradient(to right, #111111, #FFD700)'
         : 'linear-gradient(to right, #FFD700, #111111)';
+      const leftLabel  = reversed ? maxLabel : minLabel;
+      const rightLabel = reversed ? minLabel : maxLabel;
       return (
-        <div className="flex items-center gap-3 mt-3 px-4">
-          <span className="text-xs text-gray-600">{reversed ? maxLabel : minLabel}</span>
-          <div className="flex-1 h-4 rounded" style={{ background: gradient }} />
-          <span className="text-xs text-gray-600">{reversed ? minLabel : maxLabel}</span>
+        <div style={{ display:'flex', alignItems:'center', gap:12, padding:'12px 20px', borderTop:'1px solid #e2e8f0' }}>
+          <span style={{ fontSize:12, color:'#94a3b8', whiteSpace:'nowrap' }}>{leftLabel}</span>
+          <div style={{ flex:1, height:10, borderRadius:99, background:gradient }} />
+          <span style={{ fontSize:12, color:'#94a3b8', whiteSpace:'nowrap' }}>{rightLabel}</span>
         </div>
       );
     }
 
     // ── App ───────────────────────────────────────────────────────────────────
     function App() {
-      const [activeTab, setActiveTab] = useState('Leaders');
-      const [mapData, setMapData] = useState({});
+      const [activeTab, setActiveTab]   = useState('Leaders');
+      const [mapData, setMapData]       = useState({});
       const [suggestions, setSuggestions] = useState([]);
       const [hallOfFame, setHallOfFame] = useState([]);
-      const [loading, setLoading] = useState(false);
-      const [error, setError] = useState(null);
-      const [form, setForm] = useState({ user_name: '', topic: '', description: '' });
+      const [loading, setLoading]       = useState(false);
+      const [error, setError]           = useState(null);
+      const [form, setForm]             = useState({ user_name:'', topic:'', description:'' });
       const [submitting, setSubmitting] = useState(false);
+      const [centerLon, setCenterLon]   = useState(null);
+      const [updatedAt, setUpdatedAt]   = useState(null);
 
       const sb = supabase.createClient(
         'https://foawimpskcoxgunilpzf.supabase.co',
         'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvYXdpbXBza2NveGd1bmlscHpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NTA1MTUsImV4cCI6MjA5NTAyNjUxNX0.VDeFpPLyWbZ4F-UlUxnVb3a0zAbEvYA_4c-XsQs6Wok'
       );
+
+      // Detect user region for map centering
+      useEffect(() => {
+        const timer = setTimeout(() => { if (centerLon === null) setCenterLon(0); }, 2500);
+        fetch('https://ipwho.is/')
+          .then(r => r.json())
+          .then(d => {
+            clearTimeout(timer);
+            setCenterLon(getRegionCenter(d.longitude ?? 0));
+          })
+          .catch(() => { clearTimeout(timer); setCenterLon(0); });
+        return () => clearTimeout(timer);
+      }, []);
 
       const loadTab = useCallback(async (tab) => {
         setError(null);
@@ -231,14 +246,12 @@
           if (mapData[mapTab.dbKey]) return;
           setLoading(true);
           try {
-            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', mapTab.dbKey).single();
+            const { data, error } = await sb.from('wikidata_cache').select('data, updated_at').eq('key', mapTab.dbKey).single();
             if (error) throw error;
             setMapData(prev => ({ ...prev, [mapTab.dbKey]: data.data }));
-          } catch (e) {
-            setError(e.message);
-          } finally {
-            setLoading(false);
-          }
+            setUpdatedAt(data.updated_at);
+          } catch (e) { setError(e.message); }
+          finally { setLoading(false); }
           return;
         }
         setLoading(true);
@@ -252,35 +265,23 @@
             if (error) throw error;
             const totals = {};
             data.forEach(r => { totals[r.user_name] = (totals[r.user_name] || 0) + r.votes; });
-            const ranked = Object.entries(totals)
-              .sort((a, b) => b[1] - a[1])
-              .slice(0, 10)
-              .map(([user_name, total_votes]) => ({ user_name, total_votes }));
-            setHallOfFame(ranked);
+            setHallOfFame(Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,10).map(([user_name, total_votes]) => ({ user_name, total_votes })));
           }
-        } catch (e) {
-          setError(e.message);
-        } finally {
-          setLoading(false);
-        }
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
       }, [mapData]);
 
       useEffect(() => { loadTab('Leaders'); }, []);
 
-      const handleTabClick = (tab) => {
-        setActiveTab(tab);
-        loadTab(tab);
-      };
+      const handleTabClick = tab => { setActiveTab(tab); loadTab(tab); };
 
       const handleVote = async (id) => {
         try {
-          const { data: current } = await sb.from('suggestions').select('votes').eq('id', id).single();
-          const { data, error } = await sb.from('suggestions').update({ votes: current.votes + 1 }).eq('id', id).select().single();
+          const { data: cur } = await sb.from('suggestions').select('votes').eq('id', id).single();
+          const { data, error } = await sb.from('suggestions').update({ votes: cur.votes + 1 }).eq('id', id).select().single();
           if (error) throw error;
           setSuggestions(prev => prev.map(s => s.id === id ? data : s));
-        } catch (e) {
-          setError(e.message);
-        }
+        } catch (e) { setError(e.message); }
       };
 
       const handleSubmit = async (e) => {
@@ -289,43 +290,57 @@
         try {
           const { error } = await sb.from('suggestions').insert({ ...form, votes: 0 });
           if (error) throw error;
-          setForm({ user_name: '', topic: '', description: '' });
+          setForm({ user_name:'', topic:'', description:'' });
           const { data } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
           setSuggestions(data);
-        } catch (e) {
-          setError(e.message);
-        } finally {
-          setSubmitting(false);
-        }
+        } catch (e) { setError(e.message); }
+        finally { setSubmitting(false); }
       };
 
       const renderContent = () => {
-        if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
+        if (error) return (
+          <div style={{ padding:24, color:'#ef4444', background:'#fef2f2', margin:16, borderRadius:8, fontSize:13 }}>
+            Error: {error}
+          </div>
+        );
 
         const mapTab = MAP_TABS.find(t => t.id === activeTab);
         if (mapTab) {
           const data = mapData[mapTab.dbKey] || [];
-          const sorted = [...data].sort((a, b) => (b[mapTab.valueKey] || 0) - (a[mapTab.valueKey] || 0));
+          const sorted = [...data].sort((a,b) => (b[mapTab.valueKey]||0)-(a[mapTab.valueKey]||0));
           return (
             <div>
-              <WorldMap data={data} loading={loading} tabCfg={mapTab} />
+              {centerLon !== null && (
+                <WorldMap data={data} loading={loading} tabCfg={mapTab} centerLon={centerLon} />
+              )}
               <ColorLegend minLabel={mapTab.minLabel} maxLabel={mapTab.maxLabel} reversed={mapTab.reversed} />
+              {updatedAt && (
+                <div style={{ padding:'0 20px 8px', fontSize:11, color:'#cbd5e1' }}>
+                  Data updated: {new Date(updatedAt).toLocaleDateString()}
+                </div>
+              )}
               {!loading && data.length > 0 && (
-                <div className="mt-4 overflow-auto max-h-64 px-4 pb-4">
-                  <table className="w-full text-sm">
+                <div style={{ maxHeight:280, overflowY:'auto', borderTop:'1px solid #e2e8f0' }}>
+                  <table className="data-table" style={{ width:'100%', borderCollapse:'collapse' }}>
                     <thead>
-                      <tr className="bg-gray-100">
-                        <th className="text-left p-2">Country</th>
-                        {mapTab.id === 'Leaders' && <th className="text-left p-2">Leader</th>}
-                        <th className="text-left p-2">{mapTab.valueLabel}</th>
+                      <tr>
+                        <th>#</th>
+                        <th>Country</th>
+                        {mapTab.id === 'Leaders' && <th>Leader</th>}
+                        <th>{mapTab.valueLabel}</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {sorted.map(d => (
-                        <tr key={d.iso2} className="border-b hover:bg-gray-50">
-                          <td className="p-2">{d.country}</td>
-                          {mapTab.id === 'Leaders' && <td className="p-2">{d.leader_name}</td>}
-                          <td className="p-2 font-semibold">{d[mapTab.valueKey]}{mapTab.unit}</td>
+                      {sorted.map((d, i) => (
+                        <tr key={d.iso2}>
+                          <td style={{ color:'#cbd5e1', width:36 }}>{i+1}</td>
+                          <td style={{ fontWeight:500 }}>{d.country}</td>
+                          {mapTab.id === 'Leaders' && <td style={{ color:'#64748b' }}>{d.leader_name}</td>}
+                          <td>
+                            <span className="badge" style={{ background: d.hex_color === '#111111' ? '#e2e8f0' : d.hex_color + '22', color: d.hex_color === '#111111' ? '#475569' : d.hex_color }}>
+                              {d[mapTab.valueKey]}{mapTab.unit}
+                            </span>
+                          </td>
                         </tr>
                       ))}
                     </tbody>
@@ -336,116 +351,110 @@
           );
         }
 
-        if (activeTab === 'Suggestions') {
-          return (
-            <div className="p-4">
-              <h2 className="text-xl font-bold mb-4">Suggest a Topic</h2>
-              <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-3">
-                <input
-                  type="text" placeholder="Your name" required maxLength={100}
-                  value={form.user_name}
-                  onChange={e => setForm(f => ({ ...f, user_name: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                />
-                <input
-                  type="text" placeholder="Topic (e.g. CO2 emissions per capita)" required maxLength={200}
-                  value={form.topic}
-                  onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm"
-                />
-                <textarea
-                  placeholder="Description (optional)" maxLength={1000}
-                  value={form.description}
-                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                  className="w-full border rounded px-3 py-2 text-sm h-20"
-                />
-                <button
-                  type="submit" disabled={submitting}
-                  className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                >
-                  {submitting ? 'Submitting...' : 'Submit'}
-                </button>
-              </form>
-              <h2 className="text-xl font-bold mb-3">All Suggestions</h2>
-              {loading && <p className="text-gray-400 text-sm">Loading...</p>}
-              <div className="space-y-3">
-                {suggestions.map(s => (
-                  <div key={s.id} className="bg-white border rounded-lg p-4 flex justify-between items-start">
-                    <div>
-                      <p className="font-semibold">{s.topic}</p>
-                      {s.description && <p className="text-sm text-gray-600 mt-1">{s.description}</p>}
-                      <p className="text-xs text-gray-400 mt-1">by {s.user_name}</p>
-                    </div>
-                    <button
-                      onClick={() => handleVote(s.id)}
-                      className="flex flex-col items-center ml-4 text-blue-600 hover:text-blue-800"
-                    >
-                      <span className="text-lg">▲</span>
-                      <span className="text-sm font-bold">{s.votes}</span>
-                    </button>
+        if (activeTab === 'Suggestions') return (
+          <div style={{ padding:24 }}>
+            <h2 style={{ fontSize:20, fontWeight:700, color:'#1e293b', marginBottom:4 }}>Suggest a Topic</h2>
+            <p style={{ fontSize:13, color:'#94a3b8', marginBottom:20 }}>What metric would you like to see on the map?</p>
+            <form onSubmit={handleSubmit} style={{ background:'#f8fafc', borderRadius:12, padding:20, marginBottom:28, border:'1px solid #e2e8f0' }}>
+              {[
+                { key:'user_name', placeholder:'Your name', type:'input' },
+                { key:'topic',     placeholder:'Topic (e.g. CO2 emissions per capita)', type:'input' },
+                { key:'description', placeholder:'Description (optional)', type:'textarea' },
+              ].map(f => f.type === 'input'
+                ? <input key={f.key} type="text" placeholder={f.placeholder} required={f.key !== 'description'} maxLength={200}
+                    value={form[f.key]} onChange={e => setForm(p => ({...p, [f.key]:e.target.value}))}
+                    style={{ display:'block', width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:13, marginBottom:10, outline:'none', background:'white' }} />
+                : <textarea key={f.key} placeholder={f.placeholder} maxLength={1000}
+                    value={form[f.key]} onChange={e => setForm(p => ({...p, [f.key]:e.target.value}))}
+                    style={{ display:'block', width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:13, marginBottom:10, height:80, resize:'vertical', outline:'none', background:'white' }} />
+              )}
+              <button type="submit" disabled={submitting}
+                style={{ background:'#3b82f6', color:'white', border:'none', borderRadius:8, padding:'10px 20px', fontSize:13, fontWeight:600, cursor:'pointer', opacity: submitting ? 0.6 : 1 }}>
+                {submitting ? 'Submitting...' : 'Submit suggestion'}
+              </button>
+            </form>
+            <h2 style={{ fontSize:18, fontWeight:700, color:'#1e293b', marginBottom:14 }}>All Suggestions</h2>
+            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
+              {suggestions.map(s => (
+                <div key={s.id} style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:12, padding:16, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
+                  <div style={{ flex:1 }}>
+                    <p style={{ fontWeight:600, color:'#1e293b', marginBottom:4 }}>{s.topic}</p>
+                    {s.description && <p style={{ fontSize:13, color:'#64748b', marginBottom:6 }}>{s.description}</p>}
+                    <p style={{ fontSize:11, color:'#cbd5e1' }}>by {s.user_name}</p>
                   </div>
-                ))}
-                {!loading && suggestions.length === 0 && (
-                  <p className="text-gray-400 text-sm">No suggestions yet. Be the first!</p>
-                )}
-              </div>
+                  <button onClick={() => handleVote(s.id)}
+                    style={{ display:'flex', flexDirection:'column', alignItems:'center', marginLeft:16, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 14px', cursor:'pointer', color:'#3b82f6', minWidth:52 }}>
+                    <span style={{ fontSize:16, lineHeight:1 }}>▲</span>
+                    <span style={{ fontSize:14, fontWeight:700 }}>{s.votes}</span>
+                  </button>
+                </div>
+              ))}
+              {!loading && suggestions.length === 0 && <p style={{ color:'#94a3b8', fontSize:13 }}>No suggestions yet. Be the first!</p>}
             </div>
-          );
-        }
+          </div>
+        );
 
-        if (activeTab === 'Hall of Fame') {
-          return (
-            <div className="p-4">
-              <h2 className="text-xl font-bold mb-4">Hall of Fame</h2>
-              <p className="text-sm text-gray-500 mb-4">Top contributors whose topic suggestions received the most votes.</p>
-              {loading && <p className="text-gray-400 text-sm">Loading...</p>}
-              <ol className="space-y-2">
-                {hallOfFame.map((entry, i) => (
-                  <li key={entry.user_name} className="flex items-center gap-4 bg-white border rounded-lg p-3">
-                    <span className={`text-2xl font-black w-8 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-300'}`}>
-                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
-                    </span>
-                    <span className="font-semibold flex-1">{entry.user_name}</span>
-                    <span className="text-blue-600 font-bold">{entry.total_votes} votes</span>
-                  </li>
-                ))}
-                {!loading && hallOfFame.length === 0 && (
-                  <p className="text-gray-400 text-sm">No entries yet. Submit and vote on suggestions!</p>
-                )}
-              </ol>
-            </div>
-          );
-        }
+        if (activeTab === 'Hall of Fame') return (
+          <div style={{ padding:24 }}>
+            <h2 style={{ fontSize:20, fontWeight:700, color:'#1e293b', marginBottom:4 }}>Hall of Fame</h2>
+            <p style={{ fontSize:13, color:'#94a3b8', marginBottom:20 }}>Top contributors whose suggestions received the most votes.</p>
+            <ol style={{ display:'flex', flexDirection:'column', gap:8 }}>
+              {hallOfFame.map((entry, i) => (
+                <li key={entry.user_name} style={{ display:'flex', alignItems:'center', gap:14, background:'white', border:'1px solid #e2e8f0', borderRadius:12, padding:'12px 16px' }}>
+                  <span style={{ fontSize:22, width:32, textAlign:'center' }}>
+                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
+                  </span>
+                  <span style={{ fontWeight:600, color:'#1e293b', flex:1 }}>{entry.user_name}</span>
+                  <span style={{ color:'#3b82f6', fontWeight:700, fontSize:14 }}>{entry.total_votes} votes</span>
+                </li>
+              ))}
+              {!loading && hallOfFame.length === 0 && <p style={{ color:'#94a3b8', fontSize:13 }}>No entries yet.</p>}
+            </ol>
+          </div>
+        );
 
         return null;
       };
 
       return (
-        <div className="max-w-5xl mx-auto">
-          <header className="bg-white shadow-sm px-6 py-4 mb-0">
-            <h1 className="text-2xl font-black text-gray-800">Another World Map</h1>
-            <p className="text-sm text-gray-500">A different view of the world</p>
+        <div style={{ maxWidth:960, margin:'0 auto', minHeight:'100vh' }}>
+          {/* Header */}
+          <header style={{ background:'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)', padding:'24px 28px' }}>
+            <div style={{ display:'flex', alignItems:'flex-end', justifyContent:'space-between' }}>
+              <div>
+                <h1 style={{ fontSize:28, fontWeight:900, color:'white', letterSpacing:'-0.5px', margin:0 }}>
+                  Another World Map
+                </h1>
+                <p style={{ fontSize:13, color:'#64748b', margin:'4px 0 0' }}>A different view of the world</p>
+              </div>
+              <div style={{ display:'flex', gap:6 }}>
+                {MAP_TABS.map(t => (
+                  <div key={t.id} style={{ width:8, height:8, borderRadius:99, background: activeTab === t.id ? '#facc15' : '#334155' }} />
+                ))}
+              </div>
+            </div>
           </header>
 
-          <nav className="bg-white border-b px-6 flex gap-1 overflow-x-auto">
+          {/* Tabs */}
+          <nav style={{ background:'white', borderBottom:'1px solid #e2e8f0', display:'flex', overflowX:'auto', padding:'0 8px' }}>
             {ALL_TABS.map(tab => (
-              <button
-                key={tab}
-                onClick={() => handleTabClick(tab)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                  activeTab === tab
-                    ? 'border-blue-600 text-blue-600'
-                    : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}
-              >
+              <button key={tab} onClick={() => handleTabClick(tab)}
+                className={`tab-btn${activeTab === tab ? ' active' : ''}`}>
                 {tab}
               </button>
             ))}
           </nav>
 
-          <main className="bg-white shadow-sm min-h-96">
+          {/* Main */}
+          <main style={{ background:'white', boxShadow:'0 1px 3px rgba(0,0,0,0.06)', minHeight:400 }}>
             {renderContent()}
           </main>
+
+          {/* Footer */}
+          <footer style={{ padding:'16px 20px', fontSize:11, color:'#94a3b8', textAlign:'center' }}>
+            Data: <a href="https://www.wikidata.org" style={{ color:'#94a3b8' }}>Wikidata</a> ·{' '}
+            <a href="https://ourworldindata.org" style={{ color:'#94a3b8' }}>Our World in Data</a> · Updated weekly
+          </footer>
         </div>
       );
     }
