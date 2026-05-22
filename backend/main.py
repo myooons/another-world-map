@@ -1,49 +1,28 @@
-import sqlite3
+import os
 import json
+import time
 import requests
 from datetime import datetime, timedelta
 from flask import Flask, request, jsonify, abort
 from flask_cors import CORS
+from supabase import create_client, Client
 
-DATABASE_FILE = "suggestions.db"
+SUPABASE_URL = os.environ["SUPABASE_URL"]
+SUPABASE_KEY = os.environ["SUPABASE_KEY"]
 SPARQL_ENDPOINT = "https://query.wikidata.org/sparql"
 CACHE_HOURS = 6
 
 AGE_MIN, AGE_MAX = 30, 90
-COLOR_YOUNG = (0xFF, 0xD7, 0x00)  # #FFD700
-COLOR_OLD   = (0x11, 0x11, 0x11)  # #111111
+COLOR_YOUNG = (0xFF, 0xD7, 0x00)
+COLOR_OLD   = (0x11, 0x11, 0x11)
 
 app = Flask(__name__)
 CORS(app)
 
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# ── DB ───────────────────────────────────────────────────────────────────────
-
-def get_db():
-    conn = sqlite3.connect(DATABASE_FILE)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-
-def init_db():
-    with get_db() as conn:
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS cache (
-                key TEXT PRIMARY KEY,
-                data TEXT NOT NULL,
-                ts TEXT NOT NULL
-            )
-        """)
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS suggestions (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                user_name TEXT NOT NULL,
-                topic TEXT NOT NULL,
-                description TEXT,
-                votes INTEGER DEFAULT 0
-            )
-        """)
-        conn.commit()
+# in-memory Wikidata cache
+_cache: dict = {}
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -68,12 +47,9 @@ def calc_age(birth_str: str):
 
 
 def sparql_fetch(key: str, query: str):
-    with get_db() as conn:
-        row = conn.execute("SELECT data, ts FROM cache WHERE key=?", (key,)).fetchone()
-        if row:
-            ts = datetime.fromisoformat(row["ts"])
-            if datetime.now() - ts < timedelta(hours=CACHE_HOURS):
-                return json.loads(row["data"])
+    entry = _cache.get(key)
+    if entry and time.time() - entry["ts"] < CACHE_HOURS * 3600:
+        return entry["data"]
 
     resp = requests.get(
         SPARQL_ENDPOINT,
@@ -86,13 +62,7 @@ def sparql_fetch(key: str, query: str):
     )
     resp.raise_for_status()
     data = resp.json()
-
-    with get_db() as conn:
-        conn.execute(
-            "REPLACE INTO cache (key, data, ts) VALUES (?,?,?)",
-            (key, json.dumps(data), datetime.now().isoformat())
-        )
-        conn.commit()
+    _cache[key] = {"data": data, "ts": time.time()}
     return data
 
 
@@ -175,49 +145,40 @@ def create_suggestion():
     description = (body.get("description") or "").strip() or None
     if not user_name or not topic:
         abort(400, "user_name and topic required")
-    with get_db() as conn:
-        cur = conn.execute(
-            "INSERT INTO suggestions (user_name, topic, description) VALUES (?,?,?)",
-            (user_name, topic, description)
-        )
-        conn.commit()
-        row = conn.execute("SELECT * FROM suggestions WHERE id=?", (cur.lastrowid,)).fetchone()
-    return jsonify(dict(row)), 201
+    row = supabase.table("suggestions").insert({
+        "user_name": user_name,
+        "topic": topic,
+        "description": description,
+        "votes": 0,
+    }).execute()
+    return jsonify(row.data[0]), 201
 
 
 @app.route("/api/suggestions")
 def list_suggestions():
-    with get_db() as conn:
-        rows = conn.execute(
-            "SELECT * FROM suggestions ORDER BY votes DESC"
-        ).fetchall()
-    return jsonify([dict(r) for r in rows])
+    rows = supabase.table("suggestions").select("*").order("votes", desc=True).execute()
+    return jsonify(rows.data)
 
 
 @app.route("/api/vote/<int:sid>", methods=["POST"])
 def vote(sid):
-    with get_db() as conn:
-        conn.execute("UPDATE suggestions SET votes = votes + 1 WHERE id=?", (sid,))
-        conn.commit()
-        row = conn.execute("SELECT * FROM suggestions WHERE id=?", (sid,)).fetchone()
-    if not row:
+    existing = supabase.table("suggestions").select("votes").eq("id", sid).execute()
+    if not existing.data:
         abort(404, "Suggestion not found")
-    return jsonify(dict(row))
+    new_votes = existing.data[0]["votes"] + 1
+    row = supabase.table("suggestions").update({"votes": new_votes}).eq("id", sid).execute()
+    return jsonify(row.data[0])
 
 
 @app.route("/api/hall-of-fame")
 def hall_of_fame():
-    with get_db() as conn:
-        rows = conn.execute("""
-            SELECT user_name, SUM(votes) AS total_votes
-            FROM suggestions
-            GROUP BY user_name
-            ORDER BY total_votes DESC
-            LIMIT 10
-        """).fetchall()
-    return jsonify([dict(r) for r in rows])
+    rows = supabase.table("suggestions").select("user_name, votes").execute()
+    totals: dict = {}
+    for r in rows.data:
+        totals[r["user_name"]] = totals.get(r["user_name"], 0) + r["votes"]
+    ranked = sorted(totals.items(), key=lambda x: x[1], reverse=True)[:10]
+    return jsonify([{"user_name": u, "total_votes": v} for u, v in ranked])
 
 
 if __name__ == "__main__":
-    init_db()
-    app.run(debug=True, host="0.0.0.0", port=5000)
+    app.run(debug=False, host="0.0.0.0", port=8080)

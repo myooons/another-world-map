@@ -160,8 +160,9 @@
       const [form, setForm] = useState({ user_name: '', topic: '', description: '' });
       const [submitting, setSubmitting] = useState(false);
 
+      const API_BASE = 'https://another-world-map.fly.dev';
       const apiFetch = useCallback(async (url, opts = {}) => {
-        const res = await fetch(url, { headers: { 'Content-Type': 'application/json' }, ...opts });
+        const res = await fetch(API_BASE + url, { headers: { 'Content-Type': 'application/json' }, ...opts });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
       }, []);
