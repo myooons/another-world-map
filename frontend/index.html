@@ -59,8 +59,70 @@
       887:'YE', 894:'ZM', 716:'ZW', 807:'MK', 158:'TW'
     };
 
+    // Map tab definitions
+    const MAP_TABS = [
+      {
+        id: 'Leaders',
+        dbKey: 'leaders',
+        minLabel: 'Young (30)',
+        maxLabel: 'Old (90+)',
+        reversed: false,
+        valueKey: 'age',
+        valueLabel: 'Age',
+        unit: 'yrs',
+        extraTooltip: e => e.leader_name ? `Leader: ${e.leader_name}<br/>` : '',
+      },
+      {
+        id: 'Median Age',
+        dbKey: 'median_age',
+        minLabel: 'Young pop (15)',
+        maxLabel: 'Old pop (55)',
+        reversed: false,
+        valueKey: 'value',
+        valueLabel: 'Median Age',
+        unit: 'yrs',
+        extraTooltip: null,
+      },
+      {
+        id: 'Life Expectancy',
+        dbKey: 'life_expectancy',
+        minLabel: 'Short (50yr)',
+        maxLabel: 'Long (85yr)',
+        reversed: true,
+        valueKey: 'value',
+        valueLabel: 'Life Expectancy',
+        unit: 'yrs',
+        extraTooltip: null,
+      },
+      {
+        id: 'Happiness',
+        dbKey: 'happiness',
+        minLabel: 'Unhappy (2)',
+        maxLabel: 'Happy (8)',
+        reversed: true,
+        valueKey: 'value',
+        valueLabel: 'Happiness',
+        unit: '/10',
+        extraTooltip: null,
+      },
+      {
+        id: 'Press Freedom',
+        dbKey: 'press_freedom',
+        minLabel: 'Free (0)',
+        maxLabel: 'Not Free (100)',
+        reversed: false,
+        valueKey: 'value',
+        valueLabel: 'Press Index',
+        unit: '',
+        extraTooltip: null,
+      },
+    ];
+
+    const SOCIAL_TABS = ['Suggestions', 'Hall of Fame'];
+    const ALL_TABS = [...MAP_TABS.map(t => t.id), ...SOCIAL_TABS];
+
     // ── WorldMap ──────────────────────────────────────────────────────────────
-    function WorldMap({ data = [], loading = false, labelKey = 'leader_name', valueLabel = 'Age' }) {
+    function WorldMap({ data = [], loading = false, tabCfg }) {
       const svgRef = useRef(null);
       const containerRef = useRef(null);
       const [geoData, setGeoData] = useState(null);
@@ -85,7 +147,6 @@
           .scale(width / (2 * Math.PI))
           .translate([width / 2, height / 2]);
         const path = d3.geoPath().projection(projection);
-
         const dataMap = new Map(data.map(d => [d.iso2, d]));
 
         svg.selectAll('path')
@@ -104,9 +165,9 @@
             const entry = iso2 ? dataMap.get(iso2) : null;
             let html = `<strong>${entry ? entry.country : (iso2 || 'Unknown')}</strong>`;
             if (entry) {
-              if (entry[labelKey]) html += `<br/>${labelKey.replace(/_/g,' ')}: ${entry[labelKey]}`;
-              if (entry.age !== undefined) html += `<br/>${valueLabel}: ${entry.age}`;
-              if (entry.average_age !== undefined) html += `<br/>Avg ${valueLabel}: ${entry.average_age}`;
+              if (tabCfg.extraTooltip) html += '<br/>' + tabCfg.extraTooltip(entry);
+              const val = entry[tabCfg.valueKey];
+              if (val !== undefined) html += `<br/>${tabCfg.valueLabel}: ${val}${tabCfg.unit}`;
             } else {
               html += '<br/>No data';
             }
@@ -116,7 +177,7 @@
             setTooltip(t => ({ ...t, x: event.clientX + 12, y: event.clientY - 10 }));
           })
           .on('mouseout', () => setTooltip(t => ({ ...t, visible: false })));
-      }, [geoData, data]);
+      }, [geoData, data, tabCfg]);
 
       return (
         <div ref={containerRef} style={{ position: 'relative', width: '100%' }}>
@@ -134,26 +195,23 @@
     }
 
     // ── ColorLegend ───────────────────────────────────────────────────────────
-    function ColorLegend({ minLabel = 'Young (30)', maxLabel = 'Old (90+)' }) {
+    function ColorLegend({ minLabel, maxLabel, reversed = false }) {
+      const gradient = reversed
+        ? 'linear-gradient(to right, #111111, #FFD700)'
+        : 'linear-gradient(to right, #FFD700, #111111)';
       return (
-        <div className="flex items-center gap-3 mt-3">
-          <span className="text-xs text-gray-600">{minLabel}</span>
-          <div
-            className="flex-1 h-4 rounded"
-            style={{ background: 'linear-gradient(to right, #FFD700, #111111)' }}
-          />
-          <span className="text-xs text-gray-600">{maxLabel}</span>
+        <div className="flex items-center gap-3 mt-3 px-4">
+          <span className="text-xs text-gray-600">{reversed ? maxLabel : minLabel}</span>
+          <div className="flex-1 h-4 rounded" style={{ background: gradient }} />
+          <span className="text-xs text-gray-600">{reversed ? minLabel : maxLabel}</span>
         </div>
       );
     }
 
     // ── App ───────────────────────────────────────────────────────────────────
-    const TABS = ['Leaders', 'Parliament', 'Suggestions', 'Hall of Fame'];
-
     function App() {
       const [activeTab, setActiveTab] = useState('Leaders');
-      const [leadersData, setLeadersData] = useState([]);
-      const [parliamentData, setParliamentData] = useState([]);
+      const [mapData, setMapData] = useState({});
       const [suggestions, setSuggestions] = useState([]);
       const [hallOfFame, setHallOfFame] = useState([]);
       const [loading, setLoading] = useState(false);
@@ -167,18 +225,25 @@
       );
 
       const loadTab = useCallback(async (tab) => {
-        setLoading(true);
         setError(null);
+        const mapTab = MAP_TABS.find(t => t.id === tab);
+        if (mapTab) {
+          if (mapData[mapTab.dbKey]) return;
+          setLoading(true);
+          try {
+            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', mapTab.dbKey).single();
+            if (error) throw error;
+            setMapData(prev => ({ ...prev, [mapTab.dbKey]: data.data }));
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setLoading(false);
+          }
+          return;
+        }
+        setLoading(true);
         try {
-          if (tab === 'Leaders' && leadersData.length === 0) {
-            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', 'leaders').single();
-            if (error) throw error;
-            setLeadersData(data.data);
-          } else if (tab === 'Parliament' && parliamentData.length === 0) {
-            const { data, error } = await sb.from('wikidata_cache').select('data').eq('key', 'parliament').single();
-            if (error) throw error;
-            setParliamentData(data.data);
-          } else if (tab === 'Suggestions') {
+          if (tab === 'Suggestions') {
             const { data, error } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
             if (error) throw error;
             setSuggestions(data);
@@ -187,7 +252,10 @@
             if (error) throw error;
             const totals = {};
             data.forEach(r => { totals[r.user_name] = (totals[r.user_name] || 0) + r.votes; });
-            const ranked = Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,10).map(([user_name, total_votes]) => ({ user_name, total_votes }));
+            const ranked = Object.entries(totals)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 10)
+              .map(([user_name, total_votes]) => ({ user_name, total_votes }));
             setHallOfFame(ranked);
           }
         } catch (e) {
@@ -195,7 +263,7 @@
         } finally {
           setLoading(false);
         }
-      }, [leadersData.length, parliamentData.length]);
+      }, [mapData]);
 
       useEffect(() => { loadTab('Leaders'); }, []);
 
@@ -234,160 +302,137 @@
       const renderContent = () => {
         if (error) return <div className="p-6 text-red-500">Error: {error}</div>;
 
-        switch (activeTab) {
-          case 'Leaders':
-            return (
-              <div>
-                <WorldMap data={leadersData} loading={loading} labelKey="leader_name" valueLabel="Age" />
-                <ColorLegend />
-                {!loading && leadersData.length > 0 && (
-                  <div className="mt-4 overflow-auto max-h-64">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-100">
+        const mapTab = MAP_TABS.find(t => t.id === activeTab);
+        if (mapTab) {
+          const data = mapData[mapTab.dbKey] || [];
+          const sorted = [...data].sort((a, b) => (b[mapTab.valueKey] || 0) - (a[mapTab.valueKey] || 0));
+          return (
+            <div>
+              <WorldMap data={data} loading={loading} tabCfg={mapTab} />
+              <ColorLegend minLabel={mapTab.minLabel} maxLabel={mapTab.maxLabel} reversed={mapTab.reversed} />
+              {!loading && data.length > 0 && (
+                <div className="mt-4 overflow-auto max-h-64 px-4 pb-4">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-100">
                         <th className="text-left p-2">Country</th>
-                        <th className="text-left p-2">Leader</th>
-                        <th className="text-left p-2">Age</th>
-                      </tr></thead>
-                      <tbody>
-                        {[...leadersData].sort((a,b) => b.age - a.age).map(d => (
-                          <tr key={d.iso2} className="border-b hover:bg-gray-50">
-                            <td className="p-2">{d.country}</td>
-                            <td className="p-2">{d.leader_name}</td>
-                            <td className="p-2 font-semibold" style={{ color: d.hex_color === '#111111' ? '#555' : d.hex_color }}>
-                              {d.age}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-
-          case 'Parliament':
-            return (
-              <div>
-                <WorldMap data={parliamentData} loading={loading} labelKey="country" valueLabel="Avg Age" />
-                <ColorLegend minLabel="Young avg (30)" maxLabel="Old avg (90+)" />
-                {!loading && parliamentData.length > 0 && (
-                  <div className="mt-4 overflow-auto max-h-64">
-                    <table className="w-full text-sm">
-                      <thead><tr className="bg-gray-100">
-                        <th className="text-left p-2">Country</th>
-                        <th className="text-left p-2">Avg Age</th>
-                      </tr></thead>
-                      <tbody>
-                        {[...parliamentData].sort((a,b) => b.average_age - a.average_age).map(d => (
-                          <tr key={d.iso2} className="border-b hover:bg-gray-50">
-                            <td className="p-2">{d.country}</td>
-                            <td className="p-2 font-semibold">{d.average_age}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            );
-
-          case 'Suggestions':
-            return (
-              <div className="p-4">
-                <h2 className="text-xl font-bold mb-4">Suggest a Topic</h2>
-                <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-3">
-                  <input
-                    type="text" placeholder="Your name" required maxLength={100}
-                    value={form.user_name}
-                    onChange={e => setForm(f => ({ ...f, user_name: e.target.value }))}
-                    className="w-full border rounded px-3 py-2 text-sm"
-                  />
-                  <input
-                    type="text" placeholder="Topic (e.g. Minister average age)" required maxLength={200}
-                    value={form.topic}
-                    onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
-                    className="w-full border rounded px-3 py-2 text-sm"
-                  />
-                  <textarea
-                    placeholder="Description (optional)" maxLength={1000}
-                    value={form.description}
-                    onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
-                    className="w-full border rounded px-3 py-2 text-sm h-20"
-                  />
-                  <button
-                    type="submit" disabled={submitting}
-                    className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
-                  >
-                    {submitting ? 'Submitting...' : 'Submit'}
-                  </button>
-                </form>
-
-                <h2 className="text-xl font-bold mb-3">All Suggestions</h2>
-                {loading && <p className="text-gray-400 text-sm">Loading...</p>}
-                <div className="space-y-3">
-                  {suggestions.map(s => (
-                    <div key={s.id} className="bg-white border rounded-lg p-4 flex justify-between items-start">
-                      <div>
-                        <p className="font-semibold">{s.topic}</p>
-                        {s.description && <p className="text-sm text-gray-600 mt-1">{s.description}</p>}
-                        <p className="text-xs text-gray-400 mt-1">by {s.user_name}</p>
-                      </div>
-                      <button
-                        onClick={() => handleVote(s.id)}
-                        className="flex flex-col items-center ml-4 text-blue-600 hover:text-blue-800"
-                      >
-                        <span className="text-lg">▲</span>
-                        <span className="text-sm font-bold">{s.votes}</span>
-                      </button>
-                    </div>
-                  ))}
-                  {!loading && suggestions.length === 0 && (
-                    <p className="text-gray-400 text-sm">No suggestions yet. Be the first!</p>
-                  )}
+                        {mapTab.id === 'Leaders' && <th className="text-left p-2">Leader</th>}
+                        <th className="text-left p-2">{mapTab.valueLabel}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sorted.map(d => (
+                        <tr key={d.iso2} className="border-b hover:bg-gray-50">
+                          <td className="p-2">{d.country}</td>
+                          {mapTab.id === 'Leaders' && <td className="p-2">{d.leader_name}</td>}
+                          <td className="p-2 font-semibold">{d[mapTab.valueKey]}{mapTab.unit}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            );
-
-          case 'Hall of Fame':
-            return (
-              <div className="p-4">
-                <h2 className="text-xl font-bold mb-4">Hall of Fame</h2>
-                <p className="text-sm text-gray-500 mb-4">Top contributors whose topic suggestions received the most votes.</p>
-                {loading && <p className="text-gray-400 text-sm">Loading...</p>}
-                <ol className="space-y-2">
-                  {hallOfFame.map((entry, i) => (
-                    <li key={entry.user_name} className="flex items-center gap-4 bg-white border rounded-lg p-3">
-                      <span className={`text-2xl font-black w-8 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-300'}`}>
-                        {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
-                      </span>
-                      <span className="font-semibold flex-1">{entry.user_name}</span>
-                      <span className="text-blue-600 font-bold">{entry.total_votes} votes</span>
-                    </li>
-                  ))}
-                  {!loading && hallOfFame.length === 0 && (
-                    <p className="text-gray-400 text-sm">No entries yet. Submit and vote on suggestions!</p>
-                  )}
-                </ol>
-              </div>
-            );
-
-          default: return null;
+              )}
+            </div>
+          );
         }
+
+        if (activeTab === 'Suggestions') {
+          return (
+            <div className="p-4">
+              <h2 className="text-xl font-bold mb-4">Suggest a Topic</h2>
+              <form onSubmit={handleSubmit} className="bg-gray-50 rounded-lg p-4 mb-6 space-y-3">
+                <input
+                  type="text" placeholder="Your name" required maxLength={100}
+                  value={form.user_name}
+                  onChange={e => setForm(f => ({ ...f, user_name: e.target.value }))}
+                  className="w-full border rounded px-3 py-2 text-sm"
+                />
+                <input
+                  type="text" placeholder="Topic (e.g. CO2 emissions per capita)" required maxLength={200}
+                  value={form.topic}
+                  onChange={e => setForm(f => ({ ...f, topic: e.target.value }))}
+                  className="w-full border rounded px-3 py-2 text-sm"
+                />
+                <textarea
+                  placeholder="Description (optional)" maxLength={1000}
+                  value={form.description}
+                  onChange={e => setForm(f => ({ ...f, description: e.target.value }))}
+                  className="w-full border rounded px-3 py-2 text-sm h-20"
+                />
+                <button
+                  type="submit" disabled={submitting}
+                  className="bg-blue-600 text-white px-4 py-2 rounded text-sm hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {submitting ? 'Submitting...' : 'Submit'}
+                </button>
+              </form>
+              <h2 className="text-xl font-bold mb-3">All Suggestions</h2>
+              {loading && <p className="text-gray-400 text-sm">Loading...</p>}
+              <div className="space-y-3">
+                {suggestions.map(s => (
+                  <div key={s.id} className="bg-white border rounded-lg p-4 flex justify-between items-start">
+                    <div>
+                      <p className="font-semibold">{s.topic}</p>
+                      {s.description && <p className="text-sm text-gray-600 mt-1">{s.description}</p>}
+                      <p className="text-xs text-gray-400 mt-1">by {s.user_name}</p>
+                    </div>
+                    <button
+                      onClick={() => handleVote(s.id)}
+                      className="flex flex-col items-center ml-4 text-blue-600 hover:text-blue-800"
+                    >
+                      <span className="text-lg">▲</span>
+                      <span className="text-sm font-bold">{s.votes}</span>
+                    </button>
+                  </div>
+                ))}
+                {!loading && suggestions.length === 0 && (
+                  <p className="text-gray-400 text-sm">No suggestions yet. Be the first!</p>
+                )}
+              </div>
+            </div>
+          );
+        }
+
+        if (activeTab === 'Hall of Fame') {
+          return (
+            <div className="p-4">
+              <h2 className="text-xl font-bold mb-4">Hall of Fame</h2>
+              <p className="text-sm text-gray-500 mb-4">Top contributors whose topic suggestions received the most votes.</p>
+              {loading && <p className="text-gray-400 text-sm">Loading...</p>}
+              <ol className="space-y-2">
+                {hallOfFame.map((entry, i) => (
+                  <li key={entry.user_name} className="flex items-center gap-4 bg-white border rounded-lg p-3">
+                    <span className={`text-2xl font-black w-8 text-center ${i === 0 ? 'text-yellow-500' : i === 1 ? 'text-gray-400' : i === 2 ? 'text-amber-600' : 'text-gray-300'}`}>
+                      {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
+                    </span>
+                    <span className="font-semibold flex-1">{entry.user_name}</span>
+                    <span className="text-blue-600 font-bold">{entry.total_votes} votes</span>
+                  </li>
+                ))}
+                {!loading && hallOfFame.length === 0 && (
+                  <p className="text-gray-400 text-sm">No entries yet. Submit and vote on suggestions!</p>
+                )}
+              </ol>
+            </div>
+          );
+        }
+
+        return null;
       };
 
       return (
         <div className="max-w-5xl mx-auto">
           <header className="bg-white shadow-sm px-6 py-4 mb-0">
             <h1 className="text-2xl font-black text-gray-800">Another World Map</h1>
-            <p className="text-sm text-gray-500">Countries colored by the age of their leaders</p>
+            <p className="text-sm text-gray-500">A different view of the world</p>
           </header>
 
-          <nav className="bg-white border-b px-6 flex gap-1">
-            {TABS.map(tab => (
+          <nav className="bg-white border-b px-6 flex gap-1 overflow-x-auto">
+            {ALL_TABS.map(tab => (
               <button
                 key={tab}
                 onClick={() => handleTabClick(tab)}
-                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
+                className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
                   activeTab === tab
                     ? 'border-blue-600 text-blue-600'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
