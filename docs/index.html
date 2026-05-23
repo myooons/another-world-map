@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -128,11 +128,11 @@
 
       useEffect(() => {
         if (!geoData || !containerRef.current) return;
-        const width = containerRef.current.clientWidth || 900;
+        const width = Math.min(containerRef.current.clientWidth || 900, 480);
         const height = width;
         const svg = d3.select(svgRef.current);
         svg.selectAll('*').remove();
-        svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
+        svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', width).attr('height', height);
 
         const baseScale = width / (2 * Math.PI) * 1.6;
         let currentScale = baseScale;
@@ -226,7 +226,7 @@
       }, [geoData, data, tabCfg, centerLon]);
 
       return (
-        <div ref={containerRef} style={{ position: 'relative', width: '100%', background: '#0f172a', borderRadius: '0 0 0 0' }}>
+        <div ref={containerRef} style={{ position: 'relative', width: '100%', background: '#0f172a', borderRadius: '0 0 0 0', display: 'flex', justifyContent: 'center' }}>
           {loading && (
             <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'#64748b', fontSize:14 }}>
               Loading data...
