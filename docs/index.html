@@ -97,11 +97,11 @@
     };
 
     const MAP_TABS = [
-      { id:'Leaders',          dbKey:'leaders',         minLabel:'Young (30)',    maxLabel:'Old (90+)',       reversed:false, valueKey:'age',   valueLabel:'Age',             unit:'',    extraTooltip: e => e.leader_name ? `<span style="color:#94a3b8;font-size:11px">Leader</span><br/>${e.leader_name}<br/>` : '' },
-      { id:'Median Age',       dbKey:'median_age',      minLabel:'Young (15yr)',  maxLabel:'Old (55yr)',      reversed:false, valueKey:'value', valueLabel:'Median Age',      unit:'yr'  },
-      { id:'Life Expectancy',  dbKey:'life_expectancy', minLabel:'Short (50yr)',  maxLabel:'Long (85yr)',     reversed:true,  valueKey:'value', valueLabel:'Life Expectancy', unit:'yr'  },
-      { id:'Happiness',        dbKey:'happiness',       minLabel:'Unhappy (2)',   maxLabel:'Happy (8)',       reversed:true,  valueKey:'value', valueLabel:'Happiness',       unit:''    },
-      { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (2)', reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:''    },
+      { id:'Leaders',          dbKey:'leaders',         minLabel:'Young (30)',    maxLabel:'Old (90+)',       reversed:false, valueKey:'age',   valueLabel:'Age',             unit:'',    extraTooltip: e => e.leader_name ? `<span style="color:#94a3b8;font-size:11px">Leader</span><br/>${e.leader_name}<br/>` : '', source:'Wikidata' },
+      { id:'Median Age',       dbKey:'median_age',      minLabel:'Young (15yr)',  maxLabel:'Old (55yr)',      reversed:false, valueKey:'value', valueLabel:'Median Age',      unit:'yr',  source:'Our World in Data (UN)' },
+      { id:'Life Expectancy',  dbKey:'life_expectancy', minLabel:'Short (50yr)',  maxLabel:'Long (85yr)',     reversed:true,  valueKey:'value', valueLabel:'Life Expectancy', unit:'yr',  source:'Our World in Data (UN)' },
+      { id:'Happiness',        dbKey:'happiness',       minLabel:'Unhappy (2)',   maxLabel:'Happy (8)',       reversed:true,  valueKey:'value', valueLabel:'Happiness',       unit:'',    source:'Our World in Data (World Happiness Report)' },
+      { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (2)',    reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:'',    source:'Our World in Data (Freedom House) · 0=Not Free · 1=Partly Free · 2=Free' },
     ];
     const SOCIAL_TABS = ['Suggestions', 'Hall of Fame'];
     const ALL_TABS = [...MAP_TABS.map(t => t.id), ...SOCIAL_TABS];
@@ -134,16 +134,19 @@
         svg.selectAll('*').remove();
         svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
 
+        const baseScale = width / (2 * Math.PI) * 1.6;
+        let currentScale = baseScale;
+        let currentRotate = [-centerLon, 0];
+
         const projection = d3.geoOrthographic()
-          .rotate([-centerLon, 0])
-          .scale(width / (2 * Math.PI) * 1.6)
+          .rotate(currentRotate)
+          .scale(currentScale)
           .translate([width / 2, height / 2])
           .clipAngle(90);
         const path = d3.geoPath().projection(projection);
         const dataMap = new Map(data.map(d => [d.iso2, d]));
 
         const g = svg.append('g');
-        let currentZoomScale = 1;
 
         g.append('path')
           .datum({type: 'Sphere'})
@@ -169,11 +172,17 @@
           })
           .attr('stroke', '#ffffff')
           .attr('stroke-width', 0.4)
-          .style('cursor', 'pointer');
+          .style('cursor', 'grab');
+
+        function redraw() {
+          projection.scale(currentScale).rotate(currentRotate);
+          g.selectAll('path').attr('d', path);
+          paths.attr('stroke-width', 0.4 * (baseScale / currentScale));
+        }
 
         paths
           .on('mouseover', function(event, d) {
-            d3.select(this).raise().attr('stroke', '#facc15').attr('stroke-width', 1.8 / currentZoomScale);
+            d3.select(this).raise().attr('stroke', '#facc15').attr('stroke-width', 1.8 * (baseScale / currentScale));
             const iso2 = ISO_NUM_TO_A2[+d.id];
             const entry = iso2 ? dataMap.get(iso2) : null;
             let html = `<strong style="font-size:14px">${entry ? entry.country : (iso2 || 'Unknown')}</strong>`;
@@ -190,18 +199,29 @@
             setTooltip(t => ({ ...t, x: event.clientX + 14, y: event.clientY - 14 }));
           })
           .on('mouseout', function() {
-            d3.select(this).attr('stroke', '#ffffff').attr('stroke-width', 0.4 / currentZoomScale);
+            d3.select(this).attr('stroke', '#ffffff').attr('stroke-width', 0.4 * (baseScale / currentScale));
             setTooltip(t => ({ ...t, visible: false }));
           });
 
+        svg.on('wheel', (event) => {
+          event.preventDefault();
+          const factor = event.deltaY > 0 ? 0.85 : 1.15;
+          currentScale = Math.max(baseScale * 0.5, Math.min(baseScale * 8, currentScale * factor));
+          redraw();
+        });
+
+        const sensitivity = 75 / baseScale;
         svg.call(
-          d3.zoom()
-            .scaleExtent([0.5, 8])
-            .on('zoom', (event) => {
-              currentZoomScale = event.transform.k;
-              g.attr('transform', event.transform);
-              g.selectAll('path.country').attr('stroke-width', 0.4 / currentZoomScale);
+          d3.drag()
+            .on('start', () => { svg.style('cursor', 'grabbing'); setTooltip(t => ({ ...t, visible: false })); })
+            .on('drag', (event) => {
+              currentRotate = [
+                currentRotate[0] + event.dx * sensitivity,
+                Math.max(-90, Math.min(90, currentRotate[1] - event.dy * sensitivity)),
+              ];
+              redraw();
             })
+            .on('end', () => { svg.style('cursor', 'grab'); })
         );
       }, [geoData, data, tabCfg, centerLon]);
 
@@ -345,7 +365,7 @@
               <ColorLegend minLabel={mapTab.minLabel} maxLabel={mapTab.maxLabel} reversed={mapTab.reversed} />
               {updatedAt && (
                 <div style={{ padding:'0 20px 8px', fontSize:11, color:'#cbd5e1' }}>
-                  Data updated: {new Date(updatedAt).toLocaleDateString()}
+                  Data updated: {new Date(updatedAt).toLocaleDateString()}{mapTab.source && <span style={{ marginLeft:12, color:'#64748b' }}>Source: {mapTab.source}</span>}
                 </div>
               )}
               {!loading && data.length > 0 && (
