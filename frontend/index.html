@@ -101,7 +101,7 @@
       { id:'Median Age',       dbKey:'median_age',      minLabel:'Young (15yr)',  maxLabel:'Old (55yr)',      reversed:false, valueKey:'value', valueLabel:'Median Age',      unit:'yr'  },
       { id:'Life Expectancy',  dbKey:'life_expectancy', minLabel:'Short (50yr)',  maxLabel:'Long (85yr)',     reversed:true,  valueKey:'value', valueLabel:'Life Expectancy', unit:'yr'  },
       { id:'Happiness',        dbKey:'happiness',       minLabel:'Unhappy (2)',   maxLabel:'Happy (8)',       reversed:true,  valueKey:'value', valueLabel:'Happiness',       unit:''    },
-      { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (100)', reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:''    },
+      { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (2)', reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:''    },
     ];
     const SOCIAL_TABS = ['Suggestions', 'Hall of Fame'];
     const ALL_TABS = [...MAP_TABS.map(t => t.id), ...SOCIAL_TABS];
@@ -129,21 +129,38 @@
       useEffect(() => {
         if (!geoData || !containerRef.current) return;
         const width = containerRef.current.clientWidth || 900;
-        const height = Math.round(width * 0.52);
+        const height = width;
         const svg = d3.select(svgRef.current);
         svg.selectAll('*').remove();
         svg.attr('viewBox', `0 0 ${width} ${height}`).attr('width', '100%').attr('height', height);
 
-        const projection = d3.geoNaturalEarth1()
+        const projection = d3.geoOrthographic()
           .rotate([-centerLon, 0])
-          .scale(width / (2 * Math.PI))
-          .translate([width / 2, height / 2]);
+          .scale(width / (2 * Math.PI) * 1.6)
+          .translate([width / 2, height / 2])
+          .clipAngle(90);
         const path = d3.geoPath().projection(projection);
         const dataMap = new Map(data.map(d => [d.iso2, d]));
 
-        const paths = svg.selectAll('path')
+        const g = svg.append('g');
+        let currentZoomScale = 1;
+
+        g.append('path')
+          .datum({type: 'Sphere'})
+          .attr('d', path)
+          .attr('fill', '#1e3a5f');
+
+        g.append('path')
+          .datum(d3.geoGraticule()())
+          .attr('d', path)
+          .attr('fill', 'none')
+          .attr('stroke', '#334155')
+          .attr('stroke-width', 0.2);
+
+        const paths = g.selectAll('path.country')
           .data(geoData.features)
           .enter().append('path')
+          .attr('class', 'country')
           .attr('d', path)
           .attr('fill', d => {
             const iso2 = ISO_NUM_TO_A2[+d.id];
@@ -156,7 +173,7 @@
 
         paths
           .on('mouseover', function(event, d) {
-            d3.select(this).raise().attr('stroke', '#facc15').attr('stroke-width', 1.8);
+            d3.select(this).raise().attr('stroke', '#facc15').attr('stroke-width', 1.8 / currentZoomScale);
             const iso2 = ISO_NUM_TO_A2[+d.id];
             const entry = iso2 ? dataMap.get(iso2) : null;
             let html = `<strong style="font-size:14px">${entry ? entry.country : (iso2 || 'Unknown')}</strong>`;
@@ -173,9 +190,19 @@
             setTooltip(t => ({ ...t, x: event.clientX + 14, y: event.clientY - 14 }));
           })
           .on('mouseout', function() {
-            d3.select(this).attr('stroke', '#ffffff').attr('stroke-width', 0.4);
+            d3.select(this).attr('stroke', '#ffffff').attr('stroke-width', 0.4 / currentZoomScale);
             setTooltip(t => ({ ...t, visible: false }));
           });
+
+        svg.call(
+          d3.zoom()
+            .scaleExtent([0.5, 8])
+            .on('zoom', (event) => {
+              currentZoomScale = event.transform.k;
+              g.attr('transform', event.transform);
+              g.selectAll('path.country').attr('stroke-width', 0.4 / currentZoomScale);
+            })
+        );
       }, [geoData, data, tabCfg, centerLon]);
 
       return (
@@ -235,7 +262,7 @@
           .then(r => r.json())
           .then(d => {
             clearTimeout(timer);
-            setCenterLon(getRegionCenter(d.longitude ?? 0));
+            setCenterLon(d.longitude ?? 0);
           })
           .catch(() => { clearTimeout(timer); setCenterLon(0); });
         return () => clearTimeout(timer);

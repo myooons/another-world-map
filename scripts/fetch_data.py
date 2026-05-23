@@ -20,7 +20,7 @@ METRIC_SCALES = {
     "median_age":      (15,  55,   False),
     "life_expectancy": (50,  85,   True),
     "happiness":       (2.0, 8.0,  True),
-    "press_freedom":   (0,   100,  False),
+    "press_freedom":   (0,   2,    False),
 }
 
 OWID_URLS = {
