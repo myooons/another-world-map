@@ -277,14 +277,14 @@
 
       // Detect user region for map centering
       useEffect(() => {
-        const timer = setTimeout(() => { if (centerLon === null) setCenterLon(0); }, 2500);
+        const timer = setTimeout(() => { if (centerLon === null) setCenterLon(127); }, 2500);
         fetch('https://ipwho.is/')
           .then(r => r.json())
           .then(d => {
             clearTimeout(timer);
-            setCenterLon(d.longitude ?? 0);
+            setCenterLon(d.longitude ?? 127);
           })
-          .catch(() => { clearTimeout(timer); setCenterLon(0); });
+          .catch(() => { clearTimeout(timer); setCenterLon(127); });
         return () => clearTimeout(timer);
       }, []);
 
