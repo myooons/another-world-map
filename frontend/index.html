@@ -102,6 +102,8 @@
       { id:'Life Expectancy',  dbKey:'life_expectancy', minLabel:'Short (50yr)',  maxLabel:'Long (85yr)',     reversed:true,  valueKey:'value', valueLabel:'Life Expectancy', unit:'yr',  source:'Our World in Data (UN)' },
       { id:'Happiness',        dbKey:'happiness',       minLabel:'Unhappy (2)',   maxLabel:'Happy (8)',       reversed:true,  valueKey:'value', valueLabel:'Happiness',       unit:'',    source:'Our World in Data (World Happiness Report)' },
       { id:'Press Freedom',    dbKey:'press_freedom',   minLabel:'Free (0)',      maxLabel:'Not Free (2)',    reversed:false, valueKey:'value', valueLabel:'Press Index',     unit:'',    source:'Our World in Data (Freedom House) · 0=Not Free · 1=Partly Free · 2=Free' },
+      { id:'Military Exp.',    dbKey:'military_expenditure', minLabel:'Low (0%)',  maxLabel:'High (10%+)',    reversed:false, valueKey:'value', valueLabel:'Military Exp.',   unit:'% GDP', source:'Our World in Data (SIPRI)' },
+      { id:'Corruption',       dbKey:'corruption_index', minLabel:'Corrupt (0)',  maxLabel:'Clean (100)',    reversed:true,  valueKey:'value', valueLabel:'CPI',             unit:'',    source:'Our World in Data (Transparency International) · 0=Highly Corrupt · 100=Very Clean' },
     ];
     const SOCIAL_TABS = ['Suggestions', 'Hall of Fame'];
     const ALL_TABS = [...MAP_TABS.map(t => t.id), ...SOCIAL_TABS];

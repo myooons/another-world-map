@@ -16,17 +16,21 @@ COLOR_OLD   = (0x11, 0x11, 0x11)
 
 # (v_min, v_max, reverse)  reverse=True → high value = yellow (good)
 METRIC_SCALES = {
-    "leaders":         (30,  90,   False),
-    "median_age":      (15,  55,   False),
-    "life_expectancy": (50,  85,   True),
-    "happiness":       (2.0, 8.0,  True),
-    "press_freedom":   (0,   2,    False),
+    "leaders":              (30,  90,   False),
+    "median_age":           (15,  55,   False),
+    "life_expectancy":      (50,  85,   True),
+    "happiness":            (2.0, 8.0,  True),
+    "press_freedom":        (0,   2,    False),
+    "military_expenditure": (0,   10,   False),
+    "corruption_index":     (0,   100,  True),
 }
 
 OWID_URLS = {
-    "median_age":    "https://ourworldindata.org/grapher/median-age.csv?tab=chart&time=latest",
-    "happiness":     "https://ourworldindata.org/grapher/happiness-cantril-ladder.csv?tab=chart&time=latest",
-    "press_freedom": "https://ourworldindata.org/grapher/freedom-of-the-press.csv?tab=chart&time=latest",
+    "median_age":           "https://ourworldindata.org/grapher/median-age.csv?tab=chart&time=latest",
+    "happiness":            "https://ourworldindata.org/grapher/happiness-cantril-ladder.csv?tab=chart&time=latest",
+    "press_freedom":        "https://ourworldindata.org/grapher/freedom-of-the-press.csv?tab=chart&time=latest",
+    "military_expenditure": "https://ourworldindata.org/grapher/military-expenditure-as-share-of-gdp.csv?tab=chart&time=latest",
+    "corruption_index":     "https://ourworldindata.org/grapher/corruption-perception-index.csv?tab=chart&time=latest",
 }
 
 LEADERS_SPARQL = """
@@ -202,7 +206,7 @@ def main():
     print(f"  {len(iso3_to_iso2)} entries")
 
     # OWID metrics
-    for metric_key in ["median_age", "happiness", "press_freedom"]:
+    for metric_key in ["median_age", "happiness", "press_freedom", "military_expenditure", "corruption_index"]:
         print(f"Fetching {metric_key}...")
         try:
             owid_data = fetch_owid_latest(metric_key)
