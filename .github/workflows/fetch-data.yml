@@ -19,7 +19,12 @@ jobs:
         run: pip install requests
 
       - name: Fetch and store data
-        env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
         run: python scripts/fetch_data.py
+
+      - name: Commit data files
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/
+          git diff --cached --quiet || git commit -m "chore: update map data [skip ci]"
+          git push

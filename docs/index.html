@@ -10,7 +10,6 @@
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <script src="https://unpkg.com/d3@7/dist/d3.min.js"></script>
   <script src="https://unpkg.com/topojson@3/dist/topojson.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
   <!-- Google AdSense -->
   <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-3931196285292252" crossorigin="anonymous"></script>
   <style>
@@ -263,19 +262,12 @@
     function App() {
       const [activeTab, setActiveTab]   = useState('Leaders');
       const [mapData, setMapData]       = useState({});
-      const [suggestions, setSuggestions] = useState([]);
-      const [hallOfFame, setHallOfFame] = useState([]);
       const [loading, setLoading]       = useState(false);
       const [error, setError]           = useState(null);
-      const [form, setForm]             = useState({ user_name:'', topic:'', description:'' });
-      const [submitting, setSubmitting] = useState(false);
       const [centerLon, setCenterLon]   = useState(null);
       const [updatedAt, setUpdatedAt]   = useState(null);
 
-      const sb = supabase.createClient(
-        'https://foawimpskcoxgunilpzf.supabase.co',
-        'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZvYXdpbXBza2NveGd1bmlscHpmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk0NTA1MTUsImV4cCI6MjA5NTAyNjUxNX0.VDeFpPLyWbZ4F-UlUxnVb3a0zAbEvYA_4c-XsQs6Wok'
-      );
+      const RAW_BASE = 'https://raw.githubusercontent.com/myooons/another-world-map/master/data';
 
       // Detect user region for map centering
       useEffect(() => {
@@ -293,31 +285,15 @@
       const loadTab = useCallback(async (tab) => {
         setError(null);
         const mapTab = MAP_TABS.find(t => t.id === tab);
-        if (mapTab) {
-          if (mapData[mapTab.dbKey]) return;
-          setLoading(true);
-          try {
-            const { data, error } = await sb.from('wikidata_cache').select('data, updated_at').eq('key', mapTab.dbKey).single();
-            if (error) throw error;
-            setMapData(prev => ({ ...prev, [mapTab.dbKey]: data.data }));
-            setUpdatedAt(data.updated_at);
-          } catch (e) { setError(e.message); }
-          finally { setLoading(false); }
-          return;
-        }
+        if (!mapTab) return;
+        if (mapData[mapTab.dbKey]) return;
         setLoading(true);
         try {
-          if (tab === 'Suggestions') {
-            const { data, error } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
-            if (error) throw error;
-            setSuggestions(data);
-          } else if (tab === 'Hall of Fame') {
-            const { data, error } = await sb.from('suggestions').select('user_name, votes');
-            if (error) throw error;
-            const totals = {};
-            data.forEach(r => { totals[r.user_name] = (totals[r.user_name] || 0) + r.votes; });
-            setHallOfFame(Object.entries(totals).sort((a,b) => b[1]-a[1]).slice(0,10).map(([user_name, total_votes]) => ({ user_name, total_votes })));
-          }
+          const res = await fetch(`${RAW_BASE}/${mapTab.dbKey}.json`);
+          if (!res.ok) throw new Error('Data not available yet — check back after the next weekly update.');
+          const json = await res.json();
+          setMapData(prev => ({ ...prev, [mapTab.dbKey]: json.data }));
+          setUpdatedAt(json.updated_at);
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
       }, [mapData]);
@@ -326,27 +302,6 @@
 
       const handleTabClick = tab => { setActiveTab(tab); loadTab(tab); };
 
-      const handleVote = async (id) => {
-        try {
-          const { data: cur } = await sb.from('suggestions').select('votes').eq('id', id).single();
-          const { data, error } = await sb.from('suggestions').update({ votes: cur.votes + 1 }).eq('id', id).select().single();
-          if (error) throw error;
-          setSuggestions(prev => prev.map(s => s.id === id ? data : s));
-        } catch (e) { setError(e.message); }
-      };
-
-      const handleSubmit = async (e) => {
-        e.preventDefault();
-        setSubmitting(true);
-        try {
-          const { error } = await sb.from('suggestions').insert({ ...form, votes: 0 });
-          if (error) throw error;
-          setForm({ user_name:'', topic:'', description:'' });
-          const { data } = await sb.from('suggestions').select('*').order('votes', { ascending: false });
-          setSuggestions(data);
-        } catch (e) { setError(e.message); }
-        finally { setSubmitting(false); }
-      };
 
       const renderContent = () => {
         if (error) return (
@@ -402,65 +357,9 @@
           );
         }
 
-        if (activeTab === 'Suggestions') return (
-          <div style={{ padding:24 }}>
-            <h2 style={{ fontSize:20, fontWeight:700, color:'#1e293b', marginBottom:4 }}>Suggest a Topic</h2>
-            <p style={{ fontSize:13, color:'#94a3b8', marginBottom:20 }}>What metric would you like to see on the map?</p>
-            <form onSubmit={handleSubmit} style={{ background:'#f8fafc', borderRadius:12, padding:20, marginBottom:28, border:'1px solid #e2e8f0' }}>
-              {[
-                { key:'user_name', placeholder:'Your name', type:'input' },
-                { key:'topic',     placeholder:'Topic (e.g. CO2 emissions per capita)', type:'input' },
-                { key:'description', placeholder:'Description (optional)', type:'textarea' },
-              ].map(f => f.type === 'input'
-                ? <input key={f.key} type="text" placeholder={f.placeholder} required={f.key !== 'description'} maxLength={200}
-                    value={form[f.key]} onChange={e => setForm(p => ({...p, [f.key]:e.target.value}))}
-                    style={{ display:'block', width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:13, marginBottom:10, outline:'none', background:'white' }} />
-                : <textarea key={f.key} placeholder={f.placeholder} maxLength={1000}
-                    value={form[f.key]} onChange={e => setForm(p => ({...p, [f.key]:e.target.value}))}
-                    style={{ display:'block', width:'100%', border:'1px solid #e2e8f0', borderRadius:8, padding:'10px 14px', fontSize:13, marginBottom:10, height:80, resize:'vertical', outline:'none', background:'white' }} />
-              )}
-              <button type="submit" disabled={submitting}
-                style={{ background:'#3b82f6', color:'white', border:'none', borderRadius:8, padding:'10px 20px', fontSize:13, fontWeight:600, cursor:'pointer', opacity: submitting ? 0.6 : 1 }}>
-                {submitting ? 'Submitting...' : 'Submit suggestion'}
-              </button>
-            </form>
-            <h2 style={{ fontSize:18, fontWeight:700, color:'#1e293b', marginBottom:14 }}>All Suggestions</h2>
-            <div style={{ display:'flex', flexDirection:'column', gap:10 }}>
-              {suggestions.map(s => (
-                <div key={s.id} style={{ background:'white', border:'1px solid #e2e8f0', borderRadius:12, padding:16, display:'flex', justifyContent:'space-between', alignItems:'flex-start' }}>
-                  <div style={{ flex:1 }}>
-                    <p style={{ fontWeight:600, color:'#1e293b', marginBottom:4 }}>{s.topic}</p>
-                    {s.description && <p style={{ fontSize:13, color:'#64748b', marginBottom:6 }}>{s.description}</p>}
-                    <p style={{ fontSize:11, color:'#cbd5e1' }}>by {s.user_name}</p>
-                  </div>
-                  <button onClick={() => handleVote(s.id)}
-                    style={{ display:'flex', flexDirection:'column', alignItems:'center', marginLeft:16, background:'#f8fafc', border:'1px solid #e2e8f0', borderRadius:8, padding:'8px 14px', cursor:'pointer', color:'#3b82f6', minWidth:52 }}>
-                    <span style={{ fontSize:16, lineHeight:1 }}>▲</span>
-                    <span style={{ fontSize:14, fontWeight:700 }}>{s.votes}</span>
-                  </button>
-                </div>
-              ))}
-              {!loading && suggestions.length === 0 && <p style={{ color:'#94a3b8', fontSize:13 }}>No suggestions yet. Be the first!</p>}
-            </div>
-          </div>
-        );
-
-        if (activeTab === 'Hall of Fame') return (
-          <div style={{ padding:24 }}>
-            <h2 style={{ fontSize:20, fontWeight:700, color:'#1e293b', marginBottom:4 }}>Hall of Fame</h2>
-            <p style={{ fontSize:13, color:'#94a3b8', marginBottom:20 }}>Top contributors whose suggestions received the most votes.</p>
-            <ol style={{ display:'flex', flexDirection:'column', gap:8 }}>
-              {hallOfFame.map((entry, i) => (
-                <li key={entry.user_name} style={{ display:'flex', alignItems:'center', gap:14, background:'white', border:'1px solid #e2e8f0', borderRadius:12, padding:'12px 16px' }}>
-                  <span style={{ fontSize:22, width:32, textAlign:'center' }}>
-                    {i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`}
-                  </span>
-                  <span style={{ fontWeight:600, color:'#1e293b', flex:1 }}>{entry.user_name}</span>
-                  <span style={{ color:'#3b82f6', fontWeight:700, fontSize:14 }}>{entry.total_votes} votes</span>
-                </li>
-              ))}
-              {!loading && hallOfFame.length === 0 && <p style={{ color:'#94a3b8', fontSize:13 }}>No entries yet.</p>}
-            </ol>
+        if (activeTab === 'Suggestions' || activeTab === 'Hall of Fame') return (
+          <div style={{ padding:48, textAlign:'center', color:'#94a3b8', fontSize:14 }}>
+            Social features are currently unavailable.
           </div>
         );
 

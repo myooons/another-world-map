@@ -1,4 +1,5 @@
 import os
+import json
 import time
 import csv
 import io
@@ -96,15 +97,10 @@ def sparql_fetch(query: str, retries: int = 3):
     return None
 
 
-def supabase_upsert(sb_url: str, sb_key: str, table: str, record: dict):
-    headers = {
-        "apikey": sb_key,
-        "Authorization": f"Bearer {sb_key}",
-        "Content-Type": "application/json",
-        "Prefer": "resolution=merge-duplicates,return=minimal",
-    }
-    resp = requests.post(f"{sb_url}/rest/v1/{table}", headers=headers, json=record, timeout=30)
-    resp.raise_for_status()
+def write_json(key: str, data: list, updated_at: str):
+    os.makedirs("data", exist_ok=True)
+    with open(f"data/{key}.json", "w", encoding="utf-8") as f:
+        json.dump({"data": data, "updated_at": updated_at}, f, ensure_ascii=False)
 
 
 def get_iso3_to_iso2():
@@ -142,8 +138,6 @@ def fetch_owid_latest(metric_key: str) -> dict:
 
 
 def main():
-    url = os.environ["SUPABASE_URL"]
-    key = os.environ["SUPABASE_KEY"]
     now = datetime.now(timezone.utc).isoformat()
 
     # Leaders
@@ -168,7 +162,7 @@ def main():
             }
         leaders = list(seen.values())
         print(f"  {len(leaders)} leaders")
-        supabase_upsert(url, key, "wikidata_cache", {"key": "leaders", "data": leaders, "updated_at": now})
+        write_json("leaders", leaders, now)
         print("  Saved.")
     else:
         print("  Failed, skipping.")
@@ -195,7 +189,7 @@ def main():
             }
         life_exp = list(seen.values())
         print(f"  {len(life_exp)} countries")
-        supabase_upsert(url, key, "wikidata_cache", {"key": "life_expectancy", "data": life_exp, "updated_at": now})
+        write_json("life_expectancy", life_exp, now)
         print("  Saved.")
     else:
         print("  Failed, skipping.")
@@ -223,7 +217,7 @@ def main():
                     "hex_color": interpolate_color(val, v_min, v_max, reverse),
                 })
             print(f"  {len(result)} countries")
-            supabase_upsert(url, key, "wikidata_cache", {"key": metric_key, "data": result, "updated_at": now})
+            write_json(metric_key, result, now)
             print("  Saved.")
         except Exception as e:
             print(f"  Failed: {e}")
